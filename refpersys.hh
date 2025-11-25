@@ -2,9 +2,59 @@
  * file refpersys.hh
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Description:
- *      This file is part of the Reflective Persistent System.
- *      It is almost its only public C++ header file.
+ * @brief Main header file for the Reflective Persistent System (RefPerSys)
+ *
+ * @details This file serves as the primary C++ header for RefPerSys, containing
+ * core definitions, types, macros, and declarations used throughout the system.
+ * It establishes the fundamental architecture of the homoiconic, reflective
+ * persistent system where code and data are unified.
+ *
+ * Purpose:
+ *      This header defines the core abstractions and infrastructure for
+ *      RefPerSys, a sophisticated reflective programming system that treats
+ *      code as data and enables runtime self-modification. It provides the
+ *      foundational classes and types that implement the meta-object protocol,
+ *      garbage collection, persistence, and the homoiconic design principles.
+ *
+ * Key Responsibilities:
+ *      - Define core value types (Rps_Value, Rps_ObjectRef) and their operations
+ *      - Establish the object system with classes, instances, and inheritance
+ *      - Provide garbage collection infrastructure and memory management
+ *      - Define persistence mechanisms for object serialization/deserialization
+ *      - Implement the meta-object protocol for reflective operations
+ *      - Support concurrent execution with thread-safe data structures
+ *      - Enable dynamic loading and plugin architecture
+ *      - Provide REPL and debugging facilities
+ *
+ * Architectural Role:
+ *      This header sits at the center of RefPerSys architecture, bridging the
+ *      static C++ compilation world with the dynamic, reflective runtime.
+ *      It implements the homoiconic principle where objects can inspect and
+ *      modify themselves, enabling the system to evolve at runtime. The design
+ *      unifies code and data through closures, instances, and the meta-object
+ *      protocol, allowing for unprecedented flexibility in program behavior.
+ *
+ * Dependencies:
+ *      - Standard C++ libraries (STL containers, algorithms, threading)
+ *      - System libraries (POSIX threads, dynamic loading, memory mapping)
+ *      - GNU libunistring (Unicode string handling)
+ *      - JSON-CPP (persistent store format)
+ *      - GMP (arbitrary precision arithmetic)
+ *      - Optional: FLTK (graphical user interface)
+ *      - Optional: libssh2 (remote operations)
+ *
+ * Related Files:
+ *      - main_rps.cc: System bootstrap and entry point
+ *      - inline_rps.hh: Inline implementations and templates
+ *      - dump_rps.cc: Object serialization implementation
+ *      - load_rps.cc: Object deserialization and plugin loading
+ *      - garbcoll_rps.cc: Garbage collection implementation
+ *      - repl_rps.cc: Read-Eval-Print Loop implementation
+ *      - cmdrepl_rps.cc: REPL command processing
+ *      - parsrepl_rps.cc: REPL expression parsing
+ *      - cppgen_rps.cc: C++ code generation
+ *      - lightgen_rps.cc: GNU Lightning JIT code generation
+ *      - eventloop_rps.cc: Event-driven execution framework
  *
  * Author(s):
  *      Basile Starynkevitch, France   <basile@starynkevitch.net>
@@ -1372,6 +1422,53 @@ static_assert ((rps_allocation_unit & (rps_allocation_unit-1)) == 0,
 #define RPS_CALL_FRAME_UNDESCRIBED ((Rps_ObjectRef)nullptr)
 
 extern "C" unsigned rps_call_frame_depth(const Rps_CallFrame*);
+/**
+ * @class Rps_ObjectRef
+ * @brief Smart reference to RefPerSys objects implementing homoiconic object management
+ *
+ * @details Rps_ObjectRef is the fundamental object reference type in RefPerSys,
+ * providing smart pointer semantics for the homoiconic object system. It serves
+ * as the primary interface for working with objects in the reflective persistent
+ * system, enabling code and data to be treated uniformly.
+ *
+ * Purpose:
+ *      This class represents references to objects in the RefPerSys homoiconic
+ *      system. Objects can represent data, code, types, and metadata, all
+ *      unified under the same reference type. This enables the system's
+ *      self-modifying and reflective capabilities.
+ *
+ * Behavioral Specification:
+ *      - Implements C++ rule of five for proper resource management
+ *      - Handles empty/moral-null references through RPS_EMPTYSLOT
+ *      - Provides thread-safe access through underlying object mutexes
+ *      - Supports comparison operations based on object identity
+ *      - Enables garbage collection marking and persistence serialization
+ *
+ * Usage Patterns:
+ *      - Use as function parameters and return values for object operations
+ *      - Employ in collections (vectors, sets, maps) for object storage
+ *      - Utilize for attribute access and method dispatch
+ *      - Apply in persistence operations (dump/load) for object serialization
+ *      - Use in REPL evaluation for dynamic object manipulation
+ *
+ * Thread Safety:
+ *      - Individual reference operations are thread-safe
+ *      - Object content access requires proper locking via objmtx()
+ *      - Concurrent access to the same object requires external synchronization
+ *      - GC marking operations are thread-aware and coordinated
+ *
+ * Persistence Implications:
+ *      - References are serialized as object IDs in JSON format
+ *      - Loading reconstructs references from persisted object IDs
+ *      - Empty references are handled specially during serialization
+ *      - Space membership affects persistence behavior
+ *
+ * @note This class follows C++ rule of five for proper resource management
+ * @note Empty references use RPS_EMPTYSLOT for moral null values
+ * @note Thread safety depends on proper use of object mutexes
+ * @see Rps_ObjectZone for the actual object implementation
+ * @see Rps_Value for the universal value type that can contain ObjectRefs
+ */
 ////////////////////////////////////////////////////////////////
 class Rps_ObjectRef // reference to objects, per C++ rule of five.
 {
@@ -1728,6 +1825,53 @@ class Rps_LexTokenValue; // mostly in repl_rps.cc
 class Rps_OutputValue;
 struct Rps_TwoValues;
 
+/**
+ * @class Rps_Value
+ * @brief Universal value type implementing homoiconic data representation
+ *
+ * @details Rps_Value is the fundamental value type in RefPerSys, capable of
+ * representing all data types in the homoiconic system. It unifies integers,
+ * floating-point numbers, strings, objects, sets, tuples, closures, and instances
+ * under a single type, enabling the system's reflective and self-modifying nature.
+ *
+ * Purpose:
+ *      This class serves as the universal container for all values in RefPerSys,
+ *      implementing the homoiconic principle where code and data share the same
+ *      representation. It enables dynamic typing and runtime introspection,
+ *      allowing the system to treat programs as data that can be manipulated.
+ *
+ * Behavioral Specification:
+ *      - Single-word representation for efficiency and memory management
+ *      - Tagged union design with type discrimination
+ *      - Support for garbage collection marking and persistence
+ *      - Type-safe access through tag-dispatched operations
+ *      - Automatic memory management for heap-allocated values
+ *
+ * Usage Patterns:
+ *      - Use as function parameters and return values for dynamic operations
+ *      - Employ in collections and data structures for heterogeneous storage
+ *      - Utilize for REPL evaluation and expression manipulation
+ *      - Apply in closure capture and application
+ *      - Use in persistence operations for value serialization
+ *
+ * Thread Safety:
+ *      - Immutable values (integers, doubles, strings) are thread-safe
+ *      - Mutable values require external synchronization
+ *      - GC marking operations are thread-aware and coordinated
+ *      - Reference counting and ownership transfer follow thread-safe patterns
+ *
+ * Persistence Implications:
+ *      - Values are serialized based on their type tags
+ *      - Object references are converted to IDs during serialization
+ *      - Loading reconstructs values from persisted representations
+ *      - Cyclic references are handled through object identity preservation
+ *
+ * @note Single-word design enables efficient storage and copying
+ * @note Type tags enable runtime type discrimination and safety
+ * @note Homoiconic design allows code to manipulate its own data structures
+ * @see Rps_ObjectRef for object reference values
+ * @see Rps_Type for the enumeration of supported value types
+ */
 //////////////// our value, a single word
 class Rps_Value
 {
