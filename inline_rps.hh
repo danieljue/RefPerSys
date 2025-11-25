@@ -2,9 +2,52 @@
  * file inline_rps.hh
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Description:
- *      This file is part of the Reflective Persistent System.
- *      It is its internal C++ header file for inlined functions.
+ * @brief Inline implementations and templates for the Reflective Persistent System
+ *
+ * @details This header provides the inline implementations and template instantiations
+ * for the core RefPerSys system. It contains the actual function bodies for many
+ * operations declared in refpersys.hh, including value operations, object management,
+ * garbage collection, and the meta-object protocol implementation.
+ *
+ * Purpose:
+ *      This file bridges the static C++ compilation world with the dynamic,
+ *      reflective runtime by providing efficient inline implementations of core
+ *      operations. It implements the homoiconic principle where code and data
+ *      are unified through closures, instances, and reflective operations.
+ *
+ * Key Responsibilities:
+ *      - Implement core value type operations (Rps_Value, Rps_ObjectRef)
+ *      - Provide inline implementations for object system operations
+ *      - Implement garbage collection marking and scanning routines
+ *      - Support the meta-object protocol with inheritance and method dispatch
+ *      - Enable efficient sequence operations (sets, tuples, vectors)
+ *      - Implement closure application and evaluation mechanisms
+ *      - Support persistence serialization/deserialization operations
+ *      - Provide thread-safe operations for concurrent execution
+ *
+ * Architectural Role:
+ *      This header serves as the implementation layer for RefPerSys's core
+ *      abstractions. It enables the system's homoiconic design by providing
+ *      efficient implementations of reflective operations. The inline nature
+ *      ensures performance while maintaining the flexibility of runtime
+ *      self-modification and inspection.
+ *
+ * Dependencies:
+ *      - Must be included after refpersys.hh (enforced by include guard)
+ *      - Relies on standard C++ libraries and system headers
+ *      - Depends on GNU libunistring for Unicode support
+ *      - Uses JSON-CPP for serialization formats
+ *
+ * Related Files:
+ *      - refpersys.hh: Core declarations and type definitions
+ *      - dump_rps.cc: Persistence serialization implementation
+ *      - load_rps.cc: Persistence deserialization implementation
+ *      - garbcoll_rps.cc: Garbage collection orchestration
+ *      - repl_rps.cc: REPL evaluation using these inline functions
+ *      - cmdrepl_rps.cc: Command processing with inline operations
+ *
+ * @note This file must be included after refpersys.hh and should not be
+ * included directly (protected by include guard).
  *
  * Author(s):
  *      Basile Starynkevitch <basile@starynkevitch.net>

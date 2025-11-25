@@ -5,8 +5,45 @@
  * Description:
  *      This file is part of the Reflective Persistent System.
  *
- *      It has the main function and related, program option parsing,
- *      code.
+ *      Purpose: Serves as the primary entry point for the RefPerSys executable,
+ *      responsible for system initialization, command-line argument processing,
+ *      persistent state loading, plugin management, and application startup.
+ *      This file orchestrates the bootstrap sequence that transforms RefPerSys
+ *      from a dormant binary into a fully operational reflective persistent system.
+ *
+ *      Key Responsibilities:
+ *      - Program argument parsing using GNU argp library
+ *      - System initialization and environment setup
+ *      - Persistent heap loading from JSON-formatted store files
+ *      - Dynamic plugin loading and initialization
+ *      - GUI process spawning and management
+ *      - REPL (Read-Eval-Print Loop) startup and command execution
+ *      - C++ code generation and compilation for temporary plugins
+ *      - Exit handling and cleanup coordination
+ *
+ *      Architectural Role: As the main entry point, this file implements the
+ *      homoiconic bootstrap pattern where code and data are unified. It loads
+ *      the persistent object graph from disk, establishes the meta-object protocol
+ *      infrastructure, and transitions the system from static compilation to
+ *      dynamic execution. This file bridges the gap between the compiled C++
+ *      runtime and the reflective, self-modifying RefPerSys environment.
+ *
+ *      Dependencies:
+ *      - GNU argp for command-line parsing
+ *      - JSON-CPP for manifest file processing
+ *      - dlfcn.h for dynamic plugin loading
+ *      - POSIX threads and processes for concurrency
+ *      - External libraries: libgccjit (optional), GNU Lightning (optional)
+ *
+ *      Related Files:
+ *      - refpersys.hh: Core type definitions and system headers
+ *      - inline_rps.hh: Inline function implementations and templates
+ *      - load_rps.cc: Persistent state deserialization logic
+ *      - dump_rps.cc: Persistent state serialization logic
+ *      - repl_rps.cc: REPL implementation and command processing
+ *      - garbcoll_rps.cc: Garbage collection system
+ *      - cppgen_rps.cc: C++ code generation for plugins
+ *      - plugins_dir/: Directory containing plugin implementations
  *
  * Author(s):
  *      Basile Starynkevitch <basile@starynkevitch.net>
@@ -544,25 +581,57 @@ extern "C" void rps_exiting(void);
 extern "C" std::recursive_mutex rps_exit_recmutx;
 std::recursive_mutex rps_exit_recmutx;
 
+/**
+ * @class Rps_exit_todo_cl
+ * @brief Manages cleanup tasks to be executed at program exit.
+ *
+ * Purpose: This class implements a mechanism for registering and executing
+ * cleanup functions when the RefPerSys process terminates. It supports both
+ * C++ std::function objects and C-style function pointers, ensuring proper
+ * resource deallocation and state cleanup in the homoiconic system.
+ *
+ * Behavioral Specification: Objects of this class are stored in a global
+ * vector (rps_exit_vecptr) and executed in reverse order during program
+ * exit via atexit(3). The class maintains thread-safe registration and
+ * execution of cleanup tasks.
+ *
+ * Usage Patterns: Create instances using the provided constructors for
+ * C++ functions or C functions. The destructor handles execution and
+ * cleanup. Use rps_do_at_exit_cpp() and rps_do_at_exit_cfun() for
+ * registration.
+ *
+ * Thread Safety: Thread-safe for registration (protected by recursive mutex),
+ * but execution occurs during single-threaded exit processing.
+ *
+ * Persistence Implications: Not persisted; exit handlers are runtime-only
+ * constructs that don't survive system dumps.
+ *
+ * @see rps_do_at_exit_cpp()
+ * @see rps_do_at_exit_cfun()
+ * @see rps_exiting()
+ */
 class Rps_exit_todo_cl
 {
   friend void rps_do_at_exit_cpp(const std::function<void(void*)>& fun,
-                                 void* data);
+                                  void* data);
   friend void rps_do_at_exit_cfun(const rps_exit_cfun_sig_t*fun,
-                                  void*data1, void*data2);
+                                   void*data1, void*data2);
   friend void rps_exiting(void);
-  bool _tdxit_is_c;
-  int _tdxit_rank;
+  bool _tdxit_is_c; /**< True if this is a C function, false for C++ */
+  int _tdxit_rank; /**< Position in the exit vector */
   union
   {
-    std::function<void(void*)> _tdxit_cppfun;
-    rps_exit_cfun_sig_t*_tdxit_ptrcfun;
-    intptr_t _tdxit_intptr;
+    std::function<void(void*)> _tdxit_cppfun; /**< C++ function object */
+    rps_exit_cfun_sig_t*_tdxit_ptrcfun; /**< C function pointer */
+    intptr_t _tdxit_intptr; /**< Union padding */
   };
-  void* _tdxit_first_data;
-  void* _tdxit_second_data;
-  static void tdxit_do_at_exit(void);
+  void* _tdxit_first_data; /**< First data parameter */
+  void* _tdxit_second_data; /**< Second data parameter (C functions only) */
+  static void tdxit_do_at_exit(void); /**< Static exit handler */
 public:
+  /**
+   * @brief Default constructor for empty exit todo.
+   */
   Rps_exit_todo_cl() :
     _tdxit_is_c(false),
     _tdxit_rank(-1),
@@ -571,10 +640,27 @@ public:
     _tdxit_second_data(nullptr)
   {
   };
+
+  /**
+   * @brief Constructor for C++ function exit handlers.
+   * @param cppfun The C++ function to execute at exit
+   * @param data User data passed to the function
+   */
   Rps_exit_todo_cl(const std::function<void(void*)> cppfun,
-                   void*data=nullptr);
+                    void*data=nullptr);
+
+  /**
+   * @brief Constructor for C function exit handlers.
+   * @param cfun The C function to execute at exit
+   * @param data1 First data parameter
+   * @param data2 Second data parameter
+   */
   Rps_exit_todo_cl(rps_exit_cfun_sig_t*cfun,
-                   void*data1=nullptr, void*data2=nullptr);
+                    void*data1=nullptr, void*data2=nullptr);
+
+  /**
+   * @brief Destructor that executes the registered function if appropriate.
+   */
   ~Rps_exit_todo_cl();
 };        // end class Rps_exit_todo_cl
 
@@ -763,6 +849,59 @@ int rps_nbjobs = RPS_NBJOBS_MIN + 2;
 
 
 /// the rps_run_loaded_application is called after loading...
+/**
+ * @brief Runs the main RefPerSys application after persistent state loading.
+ *
+ * Pre-conditions:
+ * - Persistent object graph must be fully loaded
+ * - All plugins must be initialized
+ * - System must be in a consistent state
+ * - Command line arguments must be processed
+ *
+ * Post-conditions:
+ * - REPL or GUI interface is active
+ * - System is responsive to user input
+ * - Plugins are executing their initialization code
+ * - Temporary C++ code (if any) has been compiled and loaded
+ *
+ * Side Effects:
+ * - GUI process may be spawned as child
+ * - Temporary plugin files created and compiled
+ * - Environment variables set for child processes
+ * - Signal handlers registered for GUI process cleanup
+ * - Debug flags enabled if requested
+ * - Scripts executed if specified
+ *
+ * Error Conditions:
+ * - Plugin initialization failures
+ * - C++ compilation failures
+ * - GUI process spawn failures
+ * - Script execution failures
+ *
+ * Algorithmic Overview:
+ * 1. Enable debug flags if requested after load
+ * 2. Run quick tests if not disabled
+ * 3. Create FIFO channels for GUI communication if needed
+ * 4. Execute commands specified via --command option
+ * 5. Load and initialize plugins
+ * 6. Generate and compile temporary C++ code if requested
+ * 7. Initialize GUI (FLTK) if enabled
+ * 8. Test REPL lexer if requested
+ * 9. Publish system information if requested
+ * 10. Execute scripts specified via --script option
+ * 11. Start GUI process or default interface
+ * 12. Run scripts after load
+ *
+ * This function completes the transition from static loading to dynamic
+ * execution, enabling the full homoiconic capabilities of RefPerSys.
+ *
+ * @param argc Reference to argument count (may be modified for GUI)
+ * @param argv Argument array (may be modified for GUI)
+ *
+ * @see rps_load_from()
+ * @see rps_edit_run_cplusplus_code()
+ * @see rps_do_repl_commands_vec()
+ */
 void
 rps_run_loaded_application(int &argc, char **argv)
 {
@@ -1741,6 +1880,64 @@ rps_locale(void)
   return rps_stored_locale;
 } // end rps_locale
 
+/**
+ * @brief Main entry point for the RefPerSys executable.
+ *
+ * Pre-conditions:
+ * - Command line arguments must be valid (argc >= 1, argv[0] is program name)
+ * - Environment variable REFPERSYS_TOPDIR must be set to the source directory
+ * - System must support POSIX threads and processes
+ * - Required libraries (JSON-CPP, etc.) must be available
+ * - Source directory must contain valid RefPerSys files
+ *
+ * Post-conditions:
+ * - RefPerSys system is fully initialized and operational
+ * - Persistent object graph is loaded from disk
+ * - All plugins are loaded and initialized
+ * - REPL or GUI interface is started
+ * - System is ready for user interaction or batch processing
+ *
+ * Side Effects:
+ * - Global variables initialized (rps_progname, rps_main_argc, etc.)
+ * - Thread name set for main thread
+ * - Locale configured if specified
+ * - System integrity checks performed
+ * - Persistent state loaded from JSON files
+ * - Plugins dynamically loaded via dlopen
+ * - Child processes spawned for GUI if needed
+ * - Signal handlers and exit cleanup registered
+ * - Temporary files created for plugin compilation
+ *
+ * Error Conditions:
+ * - Missing REFPERSYS_TOPDIR environment variable
+ * - Invalid command line arguments
+ * - Failure to load persistent state
+ * - Plugin loading failures
+ * - System integrity check failures
+ * - Locale setting failures
+ *
+ * Algorithmic Overview:
+ * 1. Parse command line arguments for special cases (--help, --version, --locale)
+ * 2. Initialize system environment and perform integrity checks
+ * 3. Load persistent object graph from JSON-formatted store files
+ * 4. Initialize root objects and constants
+ * 5. Load and initialize plugins
+ * 6. Execute any specified commands or start REPL/GUI
+ * 7. Run main application loop until termination
+ * 8. Perform cleanup and exit
+ *
+ * This function implements the homoiconic bootstrap: starting from a static
+ * C++ binary, it loads the dynamic, self-modifying RefPerSys environment
+ * where code and data are unified.
+ *
+ * @param argc Number of command line arguments
+ * @param argv Array of command line argument strings
+ * @return Exit code (0 for success, non-zero for failure)
+ *
+ * @see rps_run_loaded_application()
+ * @see rps_load_from()
+ * @see rps_early_initialization()
+ */
 int
 main (int argc, char** argv)
 {
@@ -1789,7 +1986,7 @@ main (int argc, char** argv)
     FILE* srcf = fopen(buf, "r");
     if (!srcf)
       RPS_FATALOUT("failed to open "<< buf
-                   << " : " << strerror(errno));
+                    << " : " << strerror(errno));
     bool foundrefpersysorg = false;
     char linbuf[256];
     do
@@ -1812,15 +2009,15 @@ main (int argc, char** argv)
       RPS_FATALOUT("failed to fopen /proc/version " << strerror(errno));
     if (!fgets(rps_buffer_proc_version, rps_path_byte_size-2, procversf))
       RPS_FATALOUT("failed to fgets /proc/version (fd#"
-                   << fileno(procversf) << ") " << strerror(errno));
+                    << fileno(procversf) << ") " << strerror(errno));
     fclose(procversf);
   }
   {
     memset(rps_progexe, 0, sizeof(rps_progexe));
     ssize_t pxl = readlink("/proc/self/exe",
-                           rps_progexe, sizeof(rps_progexe));
+                            rps_progexe, sizeof(rps_progexe));
     if (pxl <= 0 || pxl >= (ssize_t) sizeof(rps_progexe)-2)
-#warning perhaps use a popen here
+      #warning perhaps use a popen here
       // maybe we want a popen of which of the realpath of argv[0]?
       strcpy(rps_progexe, "$(/usr/bin/which refpersys)");
   }
@@ -1840,11 +2037,11 @@ main (int argc, char** argv)
                     getenv("HOME"));
     if (access(prefbuf, R_OK))
       RPS_FATALOUT("Missing preference file "
-                   << prefbuf << ": " << strerror(errno)
-                   << std::endl
-                   << "Copy then improve it from\n"
-                   << rps_topdirectory
-                   << "/etc/user-preferences-refpersys.txt");
+                    << prefbuf << ": " << strerror(errno)
+                    << std::endl
+                    << "Copy then improve it from\n"
+                    << rps_topdirectory
+                    << "/etc/user-preferences-refpersys.txt");
   }
   rps_parse_program_arguments(argc, argv);
   fflush(nullptr);

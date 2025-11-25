@@ -2,12 +2,56 @@
  * file dump_rps.cc
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Description:
- *      This file is part of the Reflective Persistent System.
+ * @brief Persistence serialization engine for the Reflective Persistent System
  *
- *      It has the code for dumping the persistent store, in JSON
- *      format, and also emit some C++ files.  See also http://json.org/ &
- *      https://github.com/open-source-parsers/jsoncpp/
+ * @details This file implements the core persistence mechanism for RefPerSys,
+ * providing the ability to serialize the entire object graph to JSON format
+ * for persistent storage. It includes the Rps_Dumper class which orchestrates
+ * the dumping process, scanning objects, managing spaces, and generating
+ * various output files including the persistent store and generated C++ code.
+ *
+ * Purpose:
+ *      This module handles the serialization (dumping) of RefPerSys's object
+ *      graph to persistent storage. It converts the in-memory homoiconic
+ *      representation into JSON format, enabling the system to save its
+ *      state and restore it later. The dumper also generates various C++
+ *      files that bootstrap the system with pre-compiled knowledge of
+ *      constants and root objects.
+ *
+ * Key Responsibilities:
+ *      - Implement the Rps_Dumper class for orchestrating persistence operations
+ *      - Scan the object graph starting from root objects and following references
+ *      - Serialize objects, values, closures, and instances to JSON format
+ *      - Manage space-based organization of persistent objects
+ *      - Generate C++ header files for constants, roots, and names
+ *      - Handle plugin and constant object discovery and serialization
+ *      - Provide thread-safe dumping operations with proper locking
+ *      - Support incremental dumping with temporary file management
+ *
+ * Architectural Role:
+ *      This file serves as the serialization engine in RefPerSys's persistence
+ *      layer. It bridges the dynamic, reflective runtime with persistent storage,
+ *      enabling the homoiconic system to maintain state across executions.
+ *      The dumper works with the loader (load_rps.cc) to provide a complete
+ *      persistence solution that preserves the system's self-modifying nature.
+ *
+ * Dependencies:
+ *      - JSON-CPP library for JSON serialization/deserialization
+ *      - GNU lightning library for JIT code generation metadata
+ *      - Standard C++ filesystem and I/O libraries
+ *      - RefPerSys core (refpersys.hh, inline_rps.hh)
+ *      - System libraries for file operations and process management
+ *
+ * Related Files:
+ *      - load_rps.cc: Deserialization and loading counterpart
+ *      - refpersys.hh: Core type definitions and object system
+ *      - inline_rps.hh: Inline implementations used during dumping
+ *      - garbcoll_rps.cc: Garbage collection integration
+ *      - Generated files: roots, constants, names, and data headers
+ *
+ * @note Originally contained code from store_rps.cc (July 2022)
+ * @see http://json.org/ for JSON specification
+ * @see https://github.com/open-source-parsers/jsoncpp/ for JSON-CPP library
  *
  * Author(s):
  *      Basile Starynkevitch <basile@starynkevitch.net>
@@ -30,9 +74,6 @@
  *
  *    You should have received a copy of the GNU General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * Notice:
- *    Same code used to be in store_rps.cc file in july 2022.
  ******************************************************************************/
 
 #include "refpersys.hh"

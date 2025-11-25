@@ -2,12 +2,56 @@
  * file load_rps.cc
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Description:
- *      This file is part of the Reflective Persistent System.
+ * @brief Persistence deserialization engine for the Reflective Persistent System
  *
- *      It has the code for loading the persistent store, in JSON
- *      format.  See also http://json.org/ &
- *      https://github.com/open-source-parsers/jsoncpp/
+ * @details This file implements the core persistence loading mechanism for RefPerSys,
+ * providing the ability to restore the entire object graph from JSON format
+ * persistent storage. It includes the Rps_Loader class which orchestrates
+ * the loading process, parsing manifest files, loading spaces, and reconstructing
+ * objects, values, closures, and instances from their serialized representations.
+ *
+ * Purpose:
+ *      This module handles the deserialization (loading) of RefPerSys's object
+ *      graph from persistent storage. It converts JSON representations back into
+ *      the in-memory homoiconic runtime structures, enabling the system to
+ *      restore its state and continue execution. The loader works with the
+ *      dumper (dump_rps.cc) to provide a complete persistence solution that
+ *      preserves the system's self-modifying nature across executions.
+ *
+ * Key Responsibilities:
+ *      - Implement the Rps_Loader class for orchestrating persistence loading operations
+ *      - Parse manifest files to discover spaces, plugins, and root objects
+ *      - Load objects in two passes: first for allocation, second for initialization
+ *      - Deserialize objects, values, closures, instances, and payloads from JSON
+ *      - Manage plugin loading with dlopen/dlsym for dynamic extensions
+ *      - Handle space-based organization during object reconstruction
+ *      - Provide thread-safe loading operations with proper locking
+ *      - Support incremental loading with todo-based deferred initialization
+ *
+ * Architectural Role:
+ *      This file serves as the deserialization engine in RefPerSys's persistence
+ *      layer. It bridges persistent storage with the dynamic, reflective runtime,
+ *      enabling the homoiconic system to maintain state across executions.
+ *      The loader works in tandem with the dumper to ensure complete fidelity
+ *      in the persistence cycle, preserving all reflective capabilities.
+ *
+ * Dependencies:
+ *      - JSON-CPP library for JSON parsing and deserialization
+ *      - Dynamic loading library (dlfcn.h) for plugin management
+ *      - Standard C++ filesystem and I/O libraries
+ *      - RefPerSys core (refpersys.hh, inline_rps.hh)
+ *      - System libraries for file operations and process management
+ *
+ * Related Files:
+ *      - dump_rps.cc: Serialization and dumping counterpart
+ *      - refpersys.hh: Core type definitions and object system
+ *      - inline_rps.hh: Inline implementations used during loading
+ *      - garbcoll_rps.cc: Garbage collection integration
+ *      - Generated files: roots, constants, and names headers
+ *
+ * @note Originally contained code from store_rps.cc (July 2022)
+ * @see http://json.org/ for JSON specification
+ * @see https://github.com/open-source-parsers/jsoncpp/ for JSON-CPP library
  *
  * Author(s):
  *      Basile Starynkevitch <basile@starynkevitch.net>
@@ -30,9 +74,6 @@
  *
  *    You should have received a copy of the GNU General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * Notice:
- *    Same code used to be in store_rps.cc file in july 2022.
  ******************************************************************************/
 
 #include "refpersys.hh"

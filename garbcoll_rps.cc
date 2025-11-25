@@ -2,10 +2,55 @@
  * file garbcoll_rps.cc
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Description:
- *      This file is part of the Reflective Persistent System.
+ * @brief Precise garbage collection and call frame management for the Reflective Persistent System
  *
- *      It has the code for the garbage collector and some code related to call frames.
+ * @details This file implements the core garbage collection mechanism for RefPerSys,
+ * providing precise mark-and-sweep collection for the homoiconic object graph.
+ * It includes the Rps_GarbageCollector class which orchestrates the GC process,
+ * manages root marking, and coordinates with the quasi-zone allocation system.
+ * Additionally, it contains call frame management code for debugging and
+ * execution context tracking.
+ *
+ * Purpose:
+ *      This module handles automatic memory management for RefPerSys's dynamic
+ *      object graph. It implements a precise garbage collector that can identify
+ *      and reclaim unreachable objects while preserving the system's reflective
+ *      capabilities. The GC works with write barriers and precise marking to
+ *      ensure correctness in the presence of self-modifying code and data.
+ *
+ * Key Responsibilities:
+ *      - Implement the Rps_GarbageCollector class for orchestrating GC operations
+ *      - Provide precise marking of reachable objects starting from roots
+ *      - Coordinate with quasi-zone allocation system for memory management
+ *      - Handle call frame marking and debugging output
+ *      - Support write barriers for generational and incremental collection
+ *      - Manage GC statistics and performance monitoring
+ *      - Ensure thread-safe GC operations with proper synchronization
+ *      - Support GC prohibition during critical sections
+ *
+ * Architectural Role:
+ *      This file serves as the memory management core in RefPerSys's runtime.
+ *      It enables the homoiconic system to manage memory automatically while
+ *      preserving the ability to inspect and modify its own structure. The
+ *      precise GC ensures that reflective operations don't leak memory or
+ *      create dangling references, maintaining system integrity.
+ *
+ * Dependencies:
+ *      - Standard C++ atomic and threading libraries
+ *      - RefPerSys core (refpersys.hh, inline_rps.hh)
+ *      - Quasi-zone allocation system for memory tracking
+ *      - System libraries for timing and synchronization
+ *
+ * Related Files:
+ *      - refpersys.hh: Core type definitions and quasi-zone declarations
+ *      - inline_rps.hh: Inline GC marking implementations
+ *      - dump_rps.cc: Persistence integration with GC state
+ *      - load_rps.cc: Object reconstruction with GC awareness
+ *      - objects_rps.cc: Payload-specific GC marking routines
+ *
+ * @note GC operations are thread-aware and can be temporarily prohibited
+ * @note Call frames are marked precisely to preserve execution context
+ * @note Write barriers ensure generational GC compatibility
  *
  * Author(s):
  *      Basile Starynkevitch <basile@starynkevitch.net>
